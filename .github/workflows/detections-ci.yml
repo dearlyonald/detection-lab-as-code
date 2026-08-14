@@ -1,0 +1,68 @@
+name: detections
+
+# Every rule is linted and behaviourally tested on every push. A rule that
+# cannot prove it fires on the attack and stays silent on the benign look-alike
+# does not get merged.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Lint and test Sigma rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate rule metadata and run detection tests
+        run: python tools/validate_sigma.py
+
+      - name: Generate ATT&CK coverage report
+        run: python tools/attack_coverage.py --navigator out/attack-navigator-layer.json
+
+      - name: Upload ATT&CK Navigator layer
+        uses: actions/upload-artifact@v4
+        with:
+          name: attack-navigator-layer
+          path: out/attack-navigator-layer.json
+          if-no-files-found: error
+
+  lint-infra:
+    name: Lint provisioning scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # A syntax error in a provisioner surfaces 20 minutes into a `vagrant up`,
+      # which is a slow and demoralising way to find a missing brace.
+      - name: ShellCheck the Linux provisioners
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y shellcheck
+          shellcheck -S warning provision/linux/**/*.sh
+
+      - name: PSScriptAnalyzer on the Windows provisioners
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $issues = Invoke-ScriptAnalyzer -Path provision/windows -Recurse -Severity Error
+          $issues | Format-Table -AutoSize
+          if ($issues) { throw "PSScriptAnalyzer found $($issues.Count) error(s)" }
+
+      - name: Validate the Vagrantfile parses
+        run: ruby -c Vagrantfile
+
+      - name: Validate lab.yml
+        run: python -c "import yaml,sys; yaml.safe_load(open('lab.yml')); print('lab.yml OK')"
