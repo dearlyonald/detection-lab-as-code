@@ -88,13 +88,13 @@ Test-Item -Name 'VirtualBox' -Expected 'VirtualBox 7.x installed' -Fatal -Check 
 # -----------------------------------------------------------------------------
 Write-Host "`nTooling" -ForegroundColor Cyan
 $hasVagrant = Test-Item -Name 'Vagrant' -Expected 'Vagrant 2.4+' -Check {
-    (Get-Command vagrant -ErrorAction SilentlyContinue) -and ((vagrant --version) -replace 'Vagrant ', '')
+    if (Get-Command vagrant -ErrorAction SilentlyContinue) { (vagrant --version) -replace 'Vagrant ', '' }
 }
 $hasPython = Test-Item -Name 'Python' -Expected 'Python 3.10+' -Fatal -Check {
-    (Get-Command python -ErrorAction SilentlyContinue) -and (python --version)
+    if (Get-Command python -ErrorAction SilentlyContinue) { (python --version) -replace 'Python ', '' }
 }
 Test-Item -Name 'Git' -Expected 'git in PATH' -Check {
-    (Get-Command git -ErrorAction SilentlyContinue) -and (git --version)
+    if (Get-Command git -ErrorAction SilentlyContinue) { (git --version) -replace 'git version ', '' }
 } | Out-Null
 
 if ($CheckOnly) {
