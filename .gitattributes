@@ -1,0 +1,28 @@
+# Line endings matter here in a way they usually do not.
+#
+# A shell script checked out with CRLF fails on Linux with the notoriously
+# unhelpful "bad interpreter: /usr/bin/env bash^M". Since this repo is authored
+# on Windows and its provisioning scripts run on Ubuntu and Kali guests, the
+# endings are pinned explicitly rather than left to core.autocrlf.
+
+* text=auto
+
+# Must be LF — these execute inside Linux guests.
+*.sh        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.py        text eol=lf
+Vagrantfile text eol=lf
+
+# Must be CRLF — PowerShell on older Windows hosts is happier with CRLF, and
+# these only ever run on Windows guests.
+*.ps1       text eol=crlf
+*.psm1      text eol=crlf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Leave binaries alone.
+*.png       binary
+*.jpg       binary
+*.box       binary
+*.msi       binary
