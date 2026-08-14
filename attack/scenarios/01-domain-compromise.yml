@@ -1,0 +1,144 @@
+# =============================================================================
+#  Scenario 01 - Phishing to Domain Admin
+# =============================================================================
+#  A full intrusion chain against NEXUS Corp, ordered the way a real one
+#  unfolds rather than grouped by ATT&CK tactic. Each technique is chosen
+#  because it is reachable given the deliberate weaknesses planted by
+#  provision/windows/11-dc-populate.ps1, so the chain actually completes instead
+#  of being a disconnected list of tests.
+#
+#  Every stage names the detection that is supposed to catch it. Stages with no
+#  detection listed are the honest gaps - see docs/coverage.md.
+# =============================================================================
+
+name: "Scenario 01 - Phishing to Domain Admin"
+description: "End-to-end intrusion against NEXUS Corp, from macro execution to DCSync"
+
+techniques:
+
+  # ---------------------------------------------------------------------------
+  # STAGE 1 - EXECUTION
+  # The user opens a document and a macro spawns PowerShell.
+  # Expected detection: win_encoded_powershell_cradle.yml
+  # ---------------------------------------------------------------------------
+  - technique: T1059.001
+    name: "PowerShell launched with an encoded download cradle"
+    stage: execution
+    test_numbers: [1, 2]
+
+  - technique: T1204.002
+    name: "User execution of a malicious file"
+    stage: execution
+    test_numbers: [1]
+
+  # ---------------------------------------------------------------------------
+  # STAGE 2 - DEFENSE EVASION
+  # Blind the endpoint agent before dropping anything durable.
+  # Expected detection: win_defender_tampering.yml
+  # ---------------------------------------------------------------------------
+  - technique: T1562.001
+    name: "Disable Defender real-time monitoring and add an exclusion"
+    stage: defense-evasion
+    test_numbers: [1, 6]
+
+  # ---------------------------------------------------------------------------
+  # STAGE 3 - COMMAND AND CONTROL
+  # Stage the second-stage payload using a signed Microsoft binary.
+  # Expected detection: win_lolbin_remote_payload_download.yml
+  # ---------------------------------------------------------------------------
+  - technique: T1105
+    name: "Ingress tool transfer via certutil and bitsadmin"
+    stage: command-and-control
+    test_numbers: [1, 6]
+
+  - technique: T1218.010
+    name: "Regsvr32 remote scriptlet execution"
+    stage: command-and-control
+    test_numbers: [1]
+
+  # ---------------------------------------------------------------------------
+  # STAGE 4 - PERSISTENCE
+  # Survive the reboot.
+  # Expected detection: win_persistence_run_key_suspicious_path.yml
+  # ---------------------------------------------------------------------------
+  - technique: T1547.001
+    name: "Registry Run key persistence"
+    stage: persistence
+    test_numbers: [1, 2]
+
+  - technique: T1053.005
+    name: "Scheduled task persistence"
+    stage: persistence
+    test_numbers: [1]
+
+  # ---------------------------------------------------------------------------
+  # STAGE 5 - DISCOVERY
+  # Map the domain. Currently NOT covered by any rule in this repo - this is a
+  # known gap and the next rule to be written.
+  # ---------------------------------------------------------------------------
+  - technique: T1087.002
+    name: "Domain account discovery"
+    stage: discovery
+    test_numbers: [1, 2]
+
+  - technique: T1482
+    name: "Domain trust discovery"
+    stage: discovery
+    test_numbers: [1]
+
+  - technique: T1069.002
+    name: "Domain group discovery"
+    stage: discovery
+    test_numbers: [1]
+
+  # ---------------------------------------------------------------------------
+  # STAGE 6 - CREDENTIAL ACCESS
+  # Harvest what the planted weaknesses expose.
+  # Expected detections: win_kerberoasting_rc4_ticket.yml
+  #                      win_asrep_roasting.yml
+  #                      win_lsass_credential_dump.yml
+  # ---------------------------------------------------------------------------
+  - technique: T1558.003
+    name: "Kerberoast the svc_mssql SPN"
+    stage: credential-access
+    test_numbers: [1]
+
+  - technique: T1558.004
+    name: "AS-REP roast f.alzahrani"
+    stage: credential-access
+    test_numbers: [1]
+
+  - technique: T1003.001
+    name: "LSASS memory dump"
+    stage: credential-access
+    test_numbers: [1, 2, 3]
+
+  - technique: T1552.001
+    name: "Credentials in files - the planted svc_backup description"
+    stage: credential-access
+    test_numbers: [1]
+
+  # ---------------------------------------------------------------------------
+  # STAGE 7 - LATERAL MOVEMENT
+  # Use the helpdesk local-admin path planted as weakness #4.
+  # Expected detection: win_admin_share_lateral_movement.yml
+  # ---------------------------------------------------------------------------
+  - technique: T1021.002
+    name: "SMB admin share execution"
+    stage: lateral-movement
+    test_numbers: [1]
+
+  - technique: T1570
+    name: "Lateral tool transfer"
+    stage: lateral-movement
+    test_numbers: [1]
+
+  # ---------------------------------------------------------------------------
+  # STAGE 8 - THE OBJECTIVE
+  # Replicate the directory and take krbtgt. Game over.
+  # Expected detection: win_dcsync_replication_rights.yml
+  # ---------------------------------------------------------------------------
+  - technique: T1003.006
+    name: "DCSync - replicate directory secrets"
+    stage: credential-access
+    test_numbers: [1]
