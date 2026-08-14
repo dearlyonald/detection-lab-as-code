@@ -1,0 +1,80 @@
+# Behaviour tests for win_dcsync_replication_rights.yml
+
+rule: win_dcsync_replication_rights.yml
+
+true_positives:
+
+  - name: Impacket secretsdump performing DCSync as a compromised admin
+    event:
+      EventID: 4662
+      Channel: Security
+      Computer: dc01.nexus.lab
+      SubjectUserSid: S-1-5-21-1004336348-1177238915-682003330-1160
+      SubjectUserName: adm.k.almutairi
+      SubjectDomainName: NEXUS
+      ObjectServer: DS
+      ObjectType: '%{19195a5b-6da0-11d0-afd3-00c04fd930c9}'
+      ObjectName: '%{2c1cd6d5-8db1-4e5c-b2ff-0f5b7a5b9e11}'
+      OperationType: Object Access
+      Properties: >-
+        Control Access
+        {1131f6aa-9c07-11d1-f79f-00c04fc2dcd2}
+        {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}
+      AccessMask: '0x100'
+
+  - name: Mimikatz lsadump::dcsync from a helpdesk account with delegated rights
+    event:
+      EventID: 4662
+      Channel: Security
+      Computer: dc01.nexus.lab
+      SubjectUserName: adm.helpdesk
+      SubjectDomainName: NEXUS
+      ObjectServer: DS
+      Properties: 'Control Access {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}'
+      AccessMask: '0x100'
+
+false_positives:
+
+  - name: Legitimate DC-to-DC replication
+    event:
+      EventID: 4662
+      Channel: Security
+      Computer: dc01.nexus.lab
+      SubjectUserName: DC02$
+      SubjectDomainName: NEXUS
+      ObjectServer: DS
+      Properties: 'Control Access {1131f6aa-9c07-11d1-f79f-00c04fc2dcd2}'
+      AccessMask: '0x100'
+
+  - name: Entra Connect sync account replicating on schedule
+    event:
+      EventID: 4662
+      Channel: Security
+      Computer: dc01.nexus.lab
+      SubjectUserName: MSOL_a41f9c3d2b58
+      SubjectDomainName: NEXUS
+      ObjectServer: DS
+      Properties: 'Control Access {1131f6ad-9c07-11d1-f79f-00c04fc2dcd2}'
+      AccessMask: '0x100'
+
+  - name: Ordinary directory read with no replication right involved
+    event:
+      EventID: 4662
+      Channel: Security
+      Computer: dc01.nexus.lab
+      SubjectUserName: a.alharbi
+      SubjectDomainName: NEXUS
+      ObjectServer: DS
+      Properties: 'Read Property {bf967aba-0de6-11d0-a285-00aa003049e2}'
+      AccessMask: '0x10'
+
+  - name: SYSTEM performing local directory maintenance
+    event:
+      EventID: 4662
+      Channel: Security
+      Computer: dc01.nexus.lab
+      SubjectUserName: SYSTEM
+      SubjectDomainName: NT AUTHORITY
+      ObjectServer: DS
+      Properties: 'Control Access {1131f6aa-9c07-11d1-f79f-00c04fc2dcd2}'
+      AccessMask: '0x100'

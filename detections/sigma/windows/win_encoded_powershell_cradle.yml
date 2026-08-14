@@ -1,0 +1,72 @@
+title: Encoded PowerShell Command Containing a Download Cradle
+id: 6c4b0e83-a512-4f7d-9e28-1b6a95d3f472
+status: test
+description: >
+  Detects a PowerShell process launched with -EncodedCommand where the base64
+  payload decodes to a remote download and execute pattern. Encoding alone is
+  not suspicious - management platforms do it constantly - so this rule requires
+  both the encoding flag and evidence of a cradle inside the blob. The match is
+  performed against all three base64 alignment offsets of the UTF-16LE encoded
+  needle, which is how the payload is caught without decoding it first.
+author: Wael Qumayi
+date: 2026/08/14
+references:
+  - https://attack.mitre.org/techniques/T1059/001/
+  - https://attack.mitre.org/techniques/T1027/
+  - https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe
+tags:
+  - attack.execution
+  - attack.t1059.001
+  - attack.defense-evasion
+  - attack.t1027
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection_img:
+    Image|endswith:
+      - '\powershell.exe'
+      - '\pwsh.exe'
+
+  # Matches -e, -ec, -enc ... -encodedcommand (PowerShell accepts any unambiguous
+  # prefix) followed by a long base64 run. The {30,} length floor is what keeps
+  # -ExecutionPolicy Bypass from matching.
+  selection_encoded_flag:
+    CommandLine|re: '(?i)\s[-/]e[a-z]*\s+[A-Za-z0-9+/=]{30,}'
+
+  # The needle is encoded as UTF-16LE and then base64'd at each of the three
+  # possible offsets, because PowerShell's -EncodedCommand is UTF-16LE.
+  selection_cradle:
+    CommandLine|utf16le|base64offset|contains:
+      - 'IEX ('
+      - 'Invoke-Expression'
+      - 'DownloadString'
+      - 'DownloadFile'
+      - 'DownloadData'
+      - 'Net.WebClient'
+      - 'Invoke-WebRequest'
+      - 'Start-BitsTransfer'
+
+  # Configuration management legitimately ships encoded commands all day.
+  filter_management_agents:
+    ParentImage|endswith:
+      - '\CcmExec.exe'
+      - '\IntuneManagementExtension.exe'
+      - '\MsSense.exe'
+
+  condition: selection_img and selection_encoded_flag and selection_cradle and not filter_management_agents
+
+fields:
+  - CommandLine
+  - ParentImage
+  - User
+
+falsepositives:
+  - Software deployment and monitoring platforms that wrap download logic in an
+    encoded command. Confirm by decoding the blob and checking the destination
+    host against your known-good infrastructure, then allow-list on ParentImage
+    rather than removing the cradle indicators.
+  - Internal automation and CI agents that bootstrap scripts from an internal
+    artefact server.
+
+level: high

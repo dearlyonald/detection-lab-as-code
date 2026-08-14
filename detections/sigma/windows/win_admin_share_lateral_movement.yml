@@ -1,0 +1,70 @@
+title: Executable Written to an Administrative Share From a Remote Host
+id: 2b6e91af-7c04-4d38-85f1-c93a0e574b62
+status: test
+description: >
+  Detects a file with an executable or script extension being written to the
+  ADMIN$ or C$ administrative shares over the network. This is the write half of
+  the classic PsExec-style lateral movement pattern - copy a payload to the
+  target's admin share, then register and start it as a service. Catching the
+  write is valuable because it happens before execution, which is the only point
+  where the movement can still be stopped rather than merely investigated.
+author: Wael Qumayi
+date: 2026/08/14
+references:
+  - https://attack.mitre.org/techniques/T1021/002/
+  - https://attack.mitre.org/techniques/T1570/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-5145
+tags:
+  - attack.lateral-movement
+  - attack.t1021.002
+  - attack.t1570
+logsource:
+  product: windows
+  service: security
+detection:
+  # 5145 requires the "Detailed File Share" audit subcategory.
+  selection:
+    EventID: 5145
+    ShareName|contains:
+      - 'ADMIN$'
+      - 'C$'
+    AccessMask|contains:
+      - '0x2'      # WriteData / AddFile
+      - '0x100'    # WriteAttributes
+    RelativeTargetName|endswith:
+      - '.exe'
+      - '.dll'
+      - '.ps1'
+      - '.bat'
+      - '.cmd'
+      - '.vbs'
+      - '.scr'
+
+  # Machine accounts writing to their own shares during patching is routine.
+  filter_machine_account:
+    SubjectUserName|endswith: '$'
+
+  filter_local:
+    IpAddress:
+      - '::1'
+      - '127.0.0.1'
+      - '-'
+
+  condition: selection and not 1 of filter_*
+
+fields:
+  - SubjectUserName
+  - IpAddress
+  - ShareName
+  - RelativeTargetName
+
+falsepositives:
+  - Software deployment and patch management tools that stage installers on
+    administrative shares. These originate from a small number of known
+    management servers, so filter on IpAddress rather than weakening the rule.
+  - Administrators copying a troubleshooting utility to a remote machine. This
+    is real activity and worth an alert in most environments, but it will be the
+    most common benign trigger.
+  - Backup agents writing recovery binaries.
+
+level: high

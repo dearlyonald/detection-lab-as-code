@@ -1,0 +1,54 @@
+title: AS-REP Roasting - TGT Requested Without Pre-Authentication
+id: b71e4d09-52c8-4a37-9f61-8d3a0c7e2b45
+status: test
+description: >
+  Detects a Kerberos AS-REQ for an account that has pre-authentication disabled.
+  Normally a client must prove it knows the password before the KDC returns
+  anything encrypted with that password. When DONT_REQ_PREAUTH is set, the KDC
+  hands out an encrypted blob to anyone who asks, so an attacker with no
+  credentials at all can harvest a crackable hash for that account. Unlike
+  Kerberoasting, this requires no prior domain foothold, which makes any
+  occurrence worth investigating.
+author: Wael Qumayi
+date: 2026/08/14
+references:
+  - https://attack.mitre.org/techniques/T1558/004/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4768
+  - https://www.thehacker.recipes/ad/movement/kerberos/asreproast
+tags:
+  - attack.credential-access
+  - attack.t1558.004
+logsource:
+  product: windows
+  service: security
+detection:
+  selection:
+    EventID: 4768
+    PreAuthType: '0'                # 0 = no pre-authentication performed
+    TicketEncryptionType:
+      - '0x17'                      # RC4-HMAC
+      - '0x18'                      # RC4-HMAC-EXP
+
+  filter_machine_accounts:
+    TargetUserName|endswith: '$'
+
+  # A failed request never returns the encrypted blob, so there is nothing to crack.
+  filter_failed:
+    Status|startswith: '0x1'
+
+  condition: selection and not 1 of filter_*
+
+fields:
+  - TargetUserName
+  - IpAddress
+  - TicketEncryptionType
+
+falsepositives:
+  - Accounts that legitimately require pre-authentication to be disabled, most
+    often for interoperability with older Unix or Java Kerberos clients. These
+    should be a short, known list; audit it with
+    `Get-ADUser -Filter {DoesNotRequirePreAuth -eq $true}` and allow-list by
+    TargetUserName rather than disabling the rule.
+  - Kerberos health-check tooling that probes authentication paths on a schedule.
+
+level: high

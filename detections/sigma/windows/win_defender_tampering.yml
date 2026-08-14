@@ -1,0 +1,69 @@
+title: Windows Defender Protection Disabled or Exclusion Added
+id: 8f14c2d7-6b39-4e05-a4c8-51d7e93b0a6f
+status: test
+description: >
+  Detects real-time protection being turned off or a broad exclusion path being
+  registered with Windows Defender. Attackers disable or blind the endpoint agent
+  immediately before dropping a payload, because it is far cheaper than making
+  the payload itself undetectable. An exclusion for a whole drive or a
+  user-writable directory is functionally the same as switching the product off,
+  while looking far more mundane in a configuration review.
+author: Wael Qumayi
+date: 2026/08/14
+references:
+  - https://attack.mitre.org/techniques/T1562/001/
+  - https://learn.microsoft.com/en-us/powershell/module/defender/set-mppreference
+tags:
+  - attack.defense-evasion
+  - attack.t1562.001
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection_disable_cmdlet:
+    CommandLine|contains|all:
+      - 'Set-MpPreference'
+      - 'DisableRealtimeMonitoring'
+
+  selection_disable_other:
+    CommandLine|contains:
+      - 'DisableBehaviorMonitoring $true'
+      - 'DisableIOAVProtection $true'
+      - 'DisableScriptScanning $true'
+      - 'MpPreference -DisableArchiveScanning'
+      - 'Uninstall-WindowsFeature -Name Windows-Defender'
+
+  # Broad exclusions - a drive root or a directory any user can write to.
+  selection_exclusion:
+    CommandLine|contains: 'Add-MpPreference'
+    CommandLine|re: '(?i)-Exclusion(Path|Extension|Process)\s+["'']?([A-Z]:\\?["'']?\s|.*\\(Users|Temp|AppData|ProgramData|Public)\\)'
+
+  # Registry route, which bypasses the cmdlets entirely.
+  selection_registry:
+    CommandLine|contains|all:
+      - 'Windows Defender'
+      - 'DisableAntiSpyware'
+
+  # The lab's own provisioning adds two narrow, documented exclusions.
+  filter_lab_provisioning:
+    CommandLine|contains:
+      - 'C:\AtomicRedTeam'
+      - 'C:\LabTools'
+
+  condition: 1 of selection_* and not filter_lab_provisioning
+
+fields:
+  - CommandLine
+  - ParentImage
+  - User
+
+falsepositives:
+  - Legitimate exclusions added by an administrator for a line-of-business
+    application, a database data directory or a build agent workspace. These
+    should be narrow and point at a specific application directory. An exclusion
+    for a drive root or a user profile path is not a legitimate exclusion.
+  - Third-party antivirus installers disabling Defender as part of a supported
+    handover.
+  - Endpoint management platforms applying an approved exclusion baseline.
+
+level: high

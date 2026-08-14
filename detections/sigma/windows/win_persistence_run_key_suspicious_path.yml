@@ -1,0 +1,80 @@
+title: Autorun Registry Key Set to a User-Writable or Interpreter Path
+id: 4a917c5e-8f03-4b26-9d71-2ea6c8b40f37
+status: test
+description: >
+  Detects a value being written to an autorun registry key where the payload
+  lives in a user-writable directory or invokes a script interpreter. Writing to
+  Run keys is not itself unusual - installers do it on every machine - so the
+  rule discriminates on where the payload points. Legitimate software installs
+  under Program Files and points at a signed executable; malware points at
+  AppData, Temp, the Public folder, or wraps a one-liner in powershell.exe.
+author: Wael Qumayi
+date: 2026/08/14
+references:
+  - https://attack.mitre.org/techniques/T1547/001/
+  - https://learn.microsoft.com/en-us/sysinternals/downloads/autoruns
+tags:
+  - attack.persistence
+  - attack.t1547.001
+logsource:
+  product: windows
+  category: registry_set
+detection:
+  selection_key:
+    TargetObject|contains:
+      - '\CurrentVersion\Run\'
+      - '\CurrentVersion\RunOnce\'
+      - '\CurrentVersion\RunServices\'
+      - '\CurrentVersion\Explorer\Shell Folders\Startup'
+      - '\Winlogon\Shell'
+      - '\Winlogon\Userinit'
+
+  # Payload sitting somewhere any unprivileged user can write to.
+  selection_writable_path:
+    Details|contains:
+      - '\AppData\'
+      - '\Temp\'
+      - '\Users\Public\'
+      - '\ProgramData\'
+      - '\Downloads\'
+      - '\$Recycle.Bin\'
+
+  # Or a script interpreter invoked directly from the autorun value, which no
+  # ordinary installer does.
+  selection_interpreter:
+    Details|contains:
+      - 'powershell'
+      - 'pwsh.exe'
+      - 'cmd.exe /c'
+      - 'cmd /c'
+      - 'wscript'
+      - 'cscript'
+      - 'mshta'
+      - 'rundll32'
+      - 'regsvr32'
+      - 'certutil'
+
+  # Value deletions carry Details of '(Empty)' and are not persistence.
+  filter_deletion:
+    Details:
+      - '(Empty)'
+      - ''
+      - null
+
+  condition: selection_key and (selection_writable_path or selection_interpreter) and not filter_deletion
+
+fields:
+  - TargetObject
+  - Details
+  - Image
+  - User
+
+falsepositives:
+  - Applications that legitimately install per-user under AppData, notably
+    Microsoft Teams, Slack, Discord, Zoom, Spotify and most Electron apps. These
+    are frequent enough that an environment-specific allow-list on Details is
+    expected before promoting this rule to stable.
+  - Enterprise agents that stage themselves in ProgramData.
+  - Driver and printer installers that use rundll32 in a RunOnce entry.
+
+level: medium

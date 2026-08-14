@@ -1,0 +1,85 @@
+# Behaviour tests for win_admin_share_lateral_movement.yml
+
+rule: win_admin_share_lateral_movement.yml
+
+true_positives:
+
+  - name: Impacket psexec staging a service binary on ADMIN$
+    event:
+      EventID: 5145
+      Channel: Security
+      Computer: ws01.nexus.lab
+      SubjectUserName: adm.helpdesk
+      SubjectDomainName: NEXUS
+      ObjectType: File
+      IpAddress: 10.13.37.40
+      IpPort: '49812'
+      ShareName: \\*\ADMIN$
+      ShareLocalPath: \??\C:\Windows
+      RelativeTargetName: xKtLmPqR.exe
+      AccessMask: '0x2'
+      AccessList: '%%4417 %%4418'
+
+  - name: DLL copied to C$ ahead of a side-loading attempt
+    event:
+      EventID: 5145
+      Channel: Security
+      Computer: ws01.nexus.lab
+      SubjectUserName: s.alqahtani
+      SubjectDomainName: NEXUS
+      ObjectType: File
+      IpAddress: 10.13.37.20
+      ShareName: \\*\C$
+      RelativeTargetName: Users\Public\version.dll
+      AccessMask: '0x2'
+
+false_positives:
+
+  - name: Machine account writing during a patch cycle
+    event:
+      EventID: 5145
+      Channel: Security
+      Computer: ws01.nexus.lab
+      SubjectUserName: WS01$
+      SubjectDomainName: NEXUS
+      IpAddress: 10.13.37.20
+      ShareName: \\*\ADMIN$
+      RelativeTargetName: Temp\update.exe
+      AccessMask: '0x2'
+
+  - name: Document written to a normal file share
+    event:
+      EventID: 5145
+      Channel: Security
+      Computer: fs01.nexus.lab
+      SubjectUserName: a.alharbi
+      SubjectDomainName: NEXUS
+      IpAddress: 10.13.37.20
+      ShareName: \\*\Finance
+      RelativeTargetName: Q3-forecast.xlsx
+      AccessMask: '0x2'
+
+  - name: Read-only access to a binary on ADMIN$
+    # Reading is not staging. AccessMask 0x1 is ReadData only.
+    event:
+      EventID: 5145
+      Channel: Security
+      Computer: ws01.nexus.lab
+      SubjectUserName: f.alzahrani
+      SubjectDomainName: NEXUS
+      IpAddress: 10.13.37.20
+      ShareName: \\*\ADMIN$
+      RelativeTargetName: System32\notepad.exe
+      AccessMask: '0x1'
+
+  - name: Local access from the machine itself
+    event:
+      EventID: 5145
+      Channel: Security
+      Computer: ws01.nexus.lab
+      SubjectUserName: adm.helpdesk
+      SubjectDomainName: NEXUS
+      IpAddress: '::1'
+      ShareName: \\*\C$
+      RelativeTargetName: Temp\tool.exe
+      AccessMask: '0x2'

@@ -1,0 +1,90 @@
+# Behaviour tests for win_defender_tampering.yml
+
+rule: win_defender_tampering.yml
+
+true_positives:
+
+  - name: Real-time monitoring disabled before payload drop
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+      CommandLine: powershell.exe -nop -c "Set-MpPreference -DisableRealtimeMonitoring $true"
+      ParentImage: C:\Windows\System32\cmd.exe
+      User: NEXUS\adm.helpdesk
+      IntegrityLevel: High
+
+  - name: Whole C drive added as an exclusion
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+      CommandLine: 'powershell.exe Add-MpPreference -ExclusionPath C:\ '
+      ParentImage: C:\Windows\System32\cmd.exe
+      User: NEXUS\adm.helpdesk
+      IntegrityLevel: High
+
+  - name: User profile directory excluded from scanning
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+      CommandLine: powershell.exe -c "Add-MpPreference -ExclusionPath C:\Users\s.alqahtani\AppData\Roaming\"
+      ParentImage: C:\Windows\explorer.exe
+      User: NEXUS\s.alqahtani
+
+  - name: Defender disabled through the registry
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\reg.exe
+      CommandLine: reg.exe add "HKLM\SOFTWARE\Policies\Microsoft\Windows Defender" /v DisableAntiSpyware /t REG_DWORD /d 1 /f
+      ParentImage: C:\Windows\System32\cmd.exe
+      User: NT AUTHORITY\SYSTEM
+
+false_positives:
+
+  - name: Lab provisioning adding its own documented exclusions
+    # provision/windows/02-audit-policy.ps1 does exactly this on every build.
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+      CommandLine: powershell.exe -c "Add-MpPreference -ExclusionPath C:\AtomicRedTeam"
+      ParentImage: C:\Windows\System32\cmd.exe
+      User: NT AUTHORITY\SYSTEM
+
+  - name: Narrow exclusion for a database data directory
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+      CommandLine: 'powershell.exe Add-MpPreference -ExclusionPath "C:\Program Files\Microsoft SQL Server\MSSQL16\DATA"'
+      ParentImage: C:\Windows\System32\msiexec.exe
+      User: NT AUTHORITY\SYSTEM
+
+  - name: Reading Defender preferences
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe
+      CommandLine: powershell.exe -c "Get-MpPreference | Select-Object ExclusionPath"
+      ParentImage: C:\Windows\System32\cmd.exe
+      User: NEXUS\f.alzahrani
+
+  - name: Starting a Defender scan
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Program Files\Windows Defender\MpCmdRun.exe
+      CommandLine: MpCmdRun.exe -Scan -ScanType 2
+      ParentImage: C:\Windows\System32\svchost.exe
+      User: NT AUTHORITY\SYSTEM

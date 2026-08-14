@@ -1,0 +1,73 @@
+title: Kerberoasting via RC4 Service Ticket Request
+id: 3f8a1c62-9d47-4e1b-b0a3-7c25e8f41d90
+status: test
+description: >
+  Detects a Kerberos service ticket (TGS) being requested with RC4-HMAC
+  encryption for a user-owned service account. Modern domains negotiate AES by
+  default, so an RC4 ticket for an SPN registered to a *user* account is the
+  signature of a Kerberoasting tool deliberately downgrading the cipher, because
+  RC4 hashes crack orders of magnitude faster than AES. The account's password
+  hash is then cracked entirely offline, leaving no further trace on the domain.
+author: Wael Qumayi
+date: 2026/08/14
+references:
+  - https://attack.mitre.org/techniques/T1558/003/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4769
+  - https://www.harmj0y.net/blog/redteaming/kerberoasting-revisited/
+tags:
+  - attack.credential-access
+  - attack.t1558.003
+logsource:
+  product: windows
+  service: security
+detection:
+  # 4769 is only logged on a domain controller, and only when the
+  # "Kerberos Service Ticket Operations" subcategory is enabled.
+  # See provision/windows/02-audit-policy.ps1.
+  selection:
+    EventID: 4769
+    TicketOptions: '0x40810000'
+    TicketEncryptionType: '0x17'   # RC4-HMAC — the downgrade that gives it away
+    Status: '0x0'                  # ticket was actually granted
+
+  # --- Noise reduction -----------------------------------------------------
+  # Computer accounts end in '$'. Their tickets are routine machine-to-machine
+  # traffic and are not roastable in any useful way.
+  filter_machine_accounts:
+    ServiceName|endswith: '$'
+
+  # krbtgt tickets are the TGT exchange itself, not a service ticket.
+  filter_krbtgt:
+    ServiceName: 'krbtgt'
+
+  # The requesting account being a machine account is normal service behaviour.
+  filter_machine_requester:
+    TargetUserName|endswith: '$'
+
+  # Localhost requests are the DC talking to itself during replication.
+  filter_local:
+    IpAddress:
+      - '::1'
+      - '127.0.0.1'
+      - '-'
+
+  condition: selection and not 1 of filter_*
+
+fields:
+  - TargetUserName
+  - ServiceName
+  - IpAddress
+  - TicketEncryptionType
+
+falsepositives:
+  - Legacy applications and appliances that genuinely cannot negotiate AES.
+    Confirm by checking whether the same TargetUserName requests RC4 tickets on
+    a stable schedule; if so, allow-list that specific account rather than
+    lowering this rule's level.
+  - Domains still running at a functional level below 2008, where RC4 remains
+    the default for all accounts. This rule is not useful in such a domain
+    without first raising the functional level.
+  - Backup and monitoring agents authenticating against SQL or SharePoint with
+    an old service account.
+
+level: high

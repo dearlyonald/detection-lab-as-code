@@ -1,0 +1,65 @@
+title: DCSync - Directory Replication Requested by a Non-DC Principal
+id: c05f8b73-1a94-4de6-8b02-6e37d9c4a218
+status: test
+description: >
+  Detects an account exercising the directory replication extended rights used
+  by DCSync. An attacker holding these rights can ask a domain controller to
+  hand over the password hash of any account, including krbtgt, without ever
+  touching the DC's disk or running code on it. The request is a normal
+  replication call, so the only evidence is a 4662 recording the extended-right
+  GUID. Legitimate replication comes from domain controllers themselves, so a
+  request from anything else is a domain-compromise-level event.
+author: Wael Qumayi
+date: 2026/08/14
+references:
+  - https://attack.mitre.org/techniques/T1003/006/
+  - https://learn.microsoft.com/en-us/windows/security/threat-protection/auditing/event-4662
+  - https://adsecurity.org/?p=1729
+tags:
+  - attack.credential-access
+  - attack.t1003.006
+logsource:
+  product: windows
+  service: security
+detection:
+  # Requires "Directory Service Access" auditing, enabled on the DC by
+  # provision/windows/02-audit-policy.ps1.
+  selection:
+    EventID: 4662
+    Properties|contains:
+      # DS-Replication-Get-Changes
+      - '1131f6aa-9c07-11d1-f79f-00c04fc2dcd2'
+      # DS-Replication-Get-Changes-All  (the one that yields secrets)
+      - '1131f6ad-9c07-11d1-f79f-00c04fc2dcd2'
+      # DS-Replication-Get-Changes-In-Filtered-Set
+      - '89e95b76-444d-4c62-991a-0facbeda640c'
+
+  # Domain controllers replicate with each other constantly and legitimately.
+  filter_dc_accounts:
+    SubjectUserName|endswith: '$'
+
+  # The built-in replication identities.
+  filter_service_accounts:
+    SubjectUserName:
+      - 'NT AUTHORITY\SYSTEM'
+      - 'SYSTEM'
+      - 'MSOL_*'          # Entra Connect sync account, legitimately replicates
+
+  condition: selection and not 1 of filter_*
+
+fields:
+  - SubjectUserName
+  - SubjectDomainName
+  - ObjectName
+  - Properties
+
+falsepositives:
+  - Microsoft Entra Connect (formerly Azure AD Connect) sync accounts, which
+    hold replication rights by design and are usually named MSOL_<hex>. Verify
+    the account against your known sync servers before dismissing.
+  - Backup and directory-migration products such as Quest or Semperis that
+    replicate the directory on a schedule. These should originate from a small,
+    fixed set of servers - allow-list on SubjectUserName plus source host.
+  - Password-audit tooling that pulls hashes for weak-password reporting.
+
+level: critical

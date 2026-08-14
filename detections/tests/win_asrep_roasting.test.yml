@@ -1,0 +1,87 @@
+# Behaviour tests for win_asrep_roasting.yml
+# f.alzahrani is the deliberately pre-auth-disabled account created by
+# provision/windows/11-dc-populate.ps1 (documented weakness #2).
+
+rule: win_asrep_roasting.yml
+
+true_positives:
+
+  - name: Impacket GetNPUsers harvesting the AS-REP hash for f.alzahrani
+    event:
+      EventID: 4768
+      Channel: Security
+      Computer: dc01.nexus.lab
+      TargetUserName: f.alzahrani
+      TargetDomainName: NEXUS.LAB
+      TargetSid: S-1-5-21-1004336348-1177238915-682003330-1141
+      ServiceName: krbtgt
+      TicketOptions: '0x40810010'
+      TicketEncryptionType: '0x17'
+      PreAuthType: '0'
+      IpAddress: ::ffff:10.13.37.40
+      Status: '0x0'
+
+  - name: Rubeus asreproast with RC4-HMAC-EXP downgrade
+    event:
+      EventID: 4768
+      Channel: Security
+      Computer: dc01.nexus.lab
+      TargetUserName: f.alzahrani
+      ServiceName: krbtgt
+      TicketEncryptionType: '0x18'
+      PreAuthType: '0'
+      IpAddress: ::ffff:10.13.37.20
+      Status: '0x0'
+
+false_positives:
+
+  - name: Standard user logon with pre-authentication performed
+    # PreAuthType 2 = encrypted timestamp. This is what every normal logon looks like.
+    event:
+      EventID: 4768
+      Channel: Security
+      Computer: dc01.nexus.lab
+      TargetUserName: a.alharbi
+      ServiceName: krbtgt
+      TicketEncryptionType: '0x12'
+      PreAuthType: '2'
+      IpAddress: ::ffff:10.13.37.20
+      Status: '0x0'
+
+  - name: Computer account TGT request at boot
+    event:
+      EventID: 4768
+      Channel: Security
+      Computer: dc01.nexus.lab
+      TargetUserName: WS01$
+      ServiceName: krbtgt
+      TicketEncryptionType: '0x17'
+      PreAuthType: '0'
+      IpAddress: ::ffff:10.13.37.20
+      Status: '0x0'
+
+  - name: Failed request for a non-existent account
+    # 0x6 = KDC_ERR_C_PRINCIPAL_UNKNOWN. No blob returned, nothing to crack.
+    event:
+      EventID: 4768
+      Channel: Security
+      Computer: dc01.nexus.lab
+      TargetUserName: notauser
+      ServiceName: krbtgt
+      TicketEncryptionType: '0x17'
+      PreAuthType: '0'
+      IpAddress: ::ffff:10.13.37.40
+      Status: '0x12'
+
+  - name: AES ticket for a pre-auth-disabled interop account
+    # AES is not practically crackable at scale, so this is not roasting.
+    event:
+      EventID: 4768
+      Channel: Security
+      Computer: dc01.nexus.lab
+      TargetUserName: svc_javaapp
+      ServiceName: krbtgt
+      TicketEncryptionType: '0x12'
+      PreAuthType: '0'
+      IpAddress: ::ffff:10.13.37.20
+      Status: '0x0'

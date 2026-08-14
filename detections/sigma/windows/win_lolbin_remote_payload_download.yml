@@ -1,0 +1,84 @@
+title: Signed Windows Binary Used to Download a Remote Payload
+id: 7d38ba01-4c6f-49e2-b58a-903fd1c7e6b4
+status: test
+description: >
+  Detects certutil, bitsadmin, mshta, curl and regsvr32 being used to retrieve
+  content from a remote host. Each of these ships with Windows, is signed by
+  Microsoft, and is therefore trusted by application allow-listing - which is
+  precisely why attackers use them instead of dropping their own downloader.
+  The techniques are old and well documented, yet they remain effective because
+  the binaries have legitimate uses that make blanket blocking impractical.
+author: Wael Qumayi
+date: 2026/08/14
+references:
+  - https://attack.mitre.org/techniques/T1105/
+  - https://attack.mitre.org/techniques/T1218/
+  - https://lolbas-project.github.io/
+tags:
+  - attack.command-and-control
+  - attack.t1105
+  - attack.defense-evasion
+  - attack.t1218
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  # certutil's URL cache is a file downloader that happens to live in a
+  # certificate utility.
+  selection_certutil:
+    Image|endswith: '\certutil.exe'
+    CommandLine|contains:
+      - 'urlcache'
+      - 'verifyctl'
+    CommandLine|contains|all:
+      - 'http'
+      - '-f'
+
+  selection_bitsadmin:
+    Image|endswith: '\bitsadmin.exe'
+    CommandLine|contains: '/transfer'
+
+  # mshta and regsvr32 executing straight from a URL is never routine.
+  selection_remote_script_host:
+    Image|endswith:
+      - '\mshta.exe'
+      - '\regsvr32.exe'
+    CommandLine|contains:
+      - 'http://'
+      - 'https://'
+      - 'ftp://'
+      - '\\'          # UNC path — a remote share is a remote payload too
+
+  selection_curl:
+    Image|endswith: '\curl.exe'
+    CommandLine|contains:
+      - '-o '
+      - '--output'
+      - '-O '
+
+  # Windows Update and Delivery Optimization use BITS legitimately and heavily.
+  filter_windows_update:
+    ParentImage|endswith:
+      - '\svchost.exe'
+      - '\TrustedInstaller.exe'
+      - '\wuauclt.exe'
+    CommandLine|contains:
+      - 'windowsupdate.com'
+      - 'delivery.mp.microsoft.com'
+
+  condition: 1 of selection_* and not filter_windows_update
+
+fields:
+  - Image
+  - CommandLine
+  - ParentImage
+  - User
+
+falsepositives:
+  - Administrators and build scripts genuinely using curl or bitsadmin to fetch
+    files from an internal artefact server. Scope by destination host, since an
+    internal FQDN is very different from a raw IP address.
+  - certutil legitimately retrieving a certificate revocation list.
+  - Software deployment tooling that wraps bitsadmin for large transfers.
+
+level: high
