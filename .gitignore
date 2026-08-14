@@ -1,0 +1,44 @@
+# Vagrant / VirtualBox
+.vagrant/
+*.box
+*.vdi
+*.vmdk
+ubuntu-*-console.log
+*-cloudimg-console.log
+
+# Downloaded binaries — provisioning fetches these, they are never committed
+provision/windows/bin/
+provision/windows/Sysmon*.zip
+provision/windows/Sysmon*.exe
+provision/windows/sysmonconfig.xml
+*.msi
+
+# Secrets — never commit real credentials, even lab ones
+.env
+secrets.yml
+*.pem
+*.key
+!docs/**/*.key.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Tooling output
+out/
+reports/
+*.log
+attack/results/
+navigator/*.generated.json
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

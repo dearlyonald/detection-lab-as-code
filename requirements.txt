@@ -1,0 +1,5 @@
+# Runtime dependencies for the tooling in tools/.
+# Deliberately minimal: the Sigma evaluator is implemented in this repo rather
+# than pulled in, so CI has no dependency on a backend that may change its
+# output format between releases.
+PyYAML>=6.0

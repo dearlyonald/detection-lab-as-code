@@ -1,0 +1,138 @@
+# =============================================================================
+#  detection-lab-as-code — single source of truth
+# =============================================================================
+#  Every VM size, IP, hostname and feature flag lives here. The Vagrantfile,
+#  the provisioning scripts and the docs all read from this file, so the lab
+#  has exactly ONE place to change.
+#
+#  Pick a profile with:   $env:LAB_PROFILE = "standard"; vagrant up
+# =============================================================================
+
+lab:
+  name: nexus-detection-lab
+  # Fictional org used for AD, hostnames and the phishing/pretext scenarios.
+  domain: nexus.lab
+  netbios: NEXUS
+  # Host-only network. Must not collide with your home LAN (usually 192.168.1.x).
+  subnet: 10.13.37.0/24
+  gateway: 10.13.37.1
+
+# -----------------------------------------------------------------------------
+# Profiles — which machines come up, so the lab fits the RAM you actually have.
+# -----------------------------------------------------------------------------
+profiles:
+  # ~12 GB — SIEM + one victim workstation. No Active Directory.
+  minimal:  [siem, ws01]
+  # ~15 GB — adds the domain controller. This is the default.
+  standard: [siem, dc01, ws01]
+  # ~17 GB — adds the attacker box (Caldera + Atomic Red Team execution host).
+  full:     [siem, dc01, ws01, attacker]
+
+default_profile: standard
+
+# -----------------------------------------------------------------------------
+# Machines
+# -----------------------------------------------------------------------------
+# NOTE on boxes: box names are pinned here deliberately. If a box is renamed or
+# retired upstream, change it in this file only. Verified alternates are listed
+# in the comment under each machine.
+machines:
+
+  siem:
+    box: bento/ubuntu-22.04
+    hostname: siem
+    ip: 10.13.37.30
+    memory: 8192          # Wazuh indexer is a JVM — do not drop below 6144
+    cpus: 4
+    gui: false
+    role: siem
+    # alternates: ubuntu/jammy64, generic/ubuntu2204
+    ports:
+      wazuh_dashboard: 443    # https://10.13.37.30
+      wazuh_api: 55000
+      agent_enrollment: 1515
+      agent_events: 1514
+
+  dc01:
+    box: gusztavvargadr/windows-server-2022-standard
+    hostname: dc01
+    ip: 10.13.37.10
+    memory: 3072
+    cpus: 2
+    gui: false
+    role: domain_controller
+    # alternates: StefanScherer/windows_2022, gusztavvargadr/windows-server
+    # Evaluation licence — 180 days, resets on rebuild. See docs/runbook.md.
+
+  ws01:
+    box: gusztavvargadr/windows-10
+    hostname: ws01
+    ip: 10.13.37.20
+    memory: 4096
+    cpus: 2
+    gui: true             # you will want to watch the attacks land
+    role: workstation
+    # alternates: gusztavvargadr/windows-11, StefanScherer/windows_10
+
+  attacker:
+    box: kalilinux/rolling
+    hostname: attacker
+    ip: 10.13.37.40
+    memory: 2048
+    cpus: 2
+    gui: false
+    role: attacker
+    # alternates: bento/ubuntu-22.04 (lighter; ART + Caldera still work)
+
+# -----------------------------------------------------------------------------
+# Telemetry — what the endpoints are configured to log.
+# This is the part that decides whether a detection is even POSSIBLE.
+# Each flag maps to a provisioning step and is asserted by tools/verify_lab.py.
+# -----------------------------------------------------------------------------
+telemetry:
+  sysmon:
+    enabled: true
+    # SwiftOnSecurity config is the community baseline; olafhartong/sysmon-modular
+    # is noisier but gives wider ATT&CK coverage. Swap here.
+    config_url: https://raw.githubusercontent.com/SwiftOnSecurity/sysmon-config/master/sysmonconfig-export.xml
+    config_local: sysmonconfig.xml
+
+  windows_audit:
+    process_creation: true          # 4688
+    command_line_in_4688: true      # the single highest-value audit setting
+    logon_events: true              # 4624 / 4625 / 4648
+    kerberos_service_tickets: true  # 4769 — needed for Kerberoasting detection
+    object_access_registry: true    # 4657
+    powershell_script_block: true   # 4104 — needed for obfuscation detection
+    powershell_module: true         # 4103
+    powershell_transcription: true
+
+  wazuh:
+    agent_enroll: true
+    # Channels shipped to the SIEM. Sysmon/Operational is the important one.
+    channels:
+      - Security
+      - System
+      - Microsoft-Windows-Sysmon/Operational
+      - Microsoft-Windows-PowerShell/Operational
+      - Microsoft-Windows-Windows Defender/Operational
+      - Microsoft-Windows-TaskScheduler/Operational
+
+  linux_audit:
+    auditd: true
+    file_integrity: true
+
+# -----------------------------------------------------------------------------
+# Detection engineering policy — enforced by CI, not by good intentions.
+# tools/validate_sigma.py fails the build when a rule violates any of this.
+# -----------------------------------------------------------------------------
+detection_policy:
+  require_attack_tag: true      # every rule maps to at least one ATT&CK technique
+  require_falsepositives: true  # every rule states how it can be wrong
+  require_references: true
+  require_author: true
+  require_uuid: true
+  min_true_positive_tests: 1    # a rule must be proven to fire
+  min_false_positive_tests: 1   # ...and proven NOT to fire on benign activity
+  allowed_levels: [informational, low, medium, high, critical]
+  allowed_status: [experimental, test, stable]
