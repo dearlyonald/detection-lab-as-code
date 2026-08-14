@@ -1,0 +1,148 @@
+<!--
+  detection-lab-as-code — minimal Sysmon configuration (offline fallback)
+
+  Used only when the SwiftOnSecurity config cannot be downloaded. It is
+  deliberately permissive: it logs MORE than a production config would, because
+  in a lab an event you filtered out is a detection you cannot write. Do not
+  copy this into a real environment without tuning — the volume is significant.
+
+  Every block below is annotated with the detections that depend on it.
+-->
+<Sysmon schemaversion="4.90">
+  <HashAlgorithms>SHA256,IMPHASH</HashAlgorithms>
+  <DnsLookup>False</DnsLookup>
+
+  <EventFiltering>
+
+    <!-- ID 1: Process creation. Backbone of nearly every rule in this repo. -->
+    <RuleGroup name="process-create" groupRelation="or">
+      <ProcessCreate onmatch="exclude">
+        <!-- Only the highest-volume, provably benign entries are excluded. -->
+        <Image condition="is">C:\Windows\System32\SearchIndexer.exe</Image>
+        <Image condition="is">C:\Windows\System32\wermgr.exe</Image>
+        <Image condition="is">C:\Windows\System32\CompatTelRunner.exe</Image>
+      </ProcessCreate>
+    </RuleGroup>
+
+    <!-- ID 3: Network connections. Feeds C2 beaconing detections. -->
+    <RuleGroup name="network-connect" groupRelation="or">
+      <NetworkConnect onmatch="exclude">
+        <!-- Lab-internal traffic to the SIEM would otherwise dominate. -->
+        <DestinationIp condition="is">10.13.37.30</DestinationIp>
+        <DestinationIp condition="is">127.0.0.1</DestinationIp>
+        <DestinationPort condition="is">137</DestinationPort>
+        <DestinationPort condition="is">138</DestinationPort>
+      </NetworkConnect>
+    </RuleGroup>
+
+    <!-- ID 5: Process termination. Cheap, and needed to close out sessions. -->
+    <RuleGroup name="process-terminate" groupRelation="or">
+      <ProcessTerminate onmatch="exclude" />
+    </RuleGroup>
+
+    <!-- ID 7: Image loaded. DLL side-loading and unsigned module detection.
+         Include-only, because logging every DLL load is genuinely unusable. -->
+    <RuleGroup name="image-load" groupRelation="or">
+      <ImageLoad onmatch="include">
+        <Signed condition="is">false</Signed>
+        <ImageLoaded condition="contains">\Temp\</ImageLoaded>
+        <ImageLoaded condition="contains">\AppData\</ImageLoaded>
+        <!-- Modules abused for credential access and injection -->
+        <ImageLoaded condition="end with">vaultcli.dll</ImageLoaded>
+        <ImageLoaded condition="end with">samlib.dll</ImageLoaded>
+        <ImageLoaded condition="end with">wdigest.dll</ImageLoaded>
+        <ImageLoaded condition="end with">System.Management.Automation.dll</ImageLoaded>
+      </ImageLoad>
+    </RuleGroup>
+
+    <!-- ID 8: CreateRemoteThread. Classic process injection. -->
+    <RuleGroup name="remote-thread" groupRelation="or">
+      <CreateRemoteThread onmatch="exclude">
+        <SourceImage condition="is">C:\Windows\System32\svchost.exe</SourceImage>
+        <SourceImage condition="is">C:\Windows\System32\wbem\WmiPrvSE.exe</SourceImage>
+      </CreateRemoteThread>
+    </RuleGroup>
+
+    <!-- ID 10: ProcessAccess. This is how LSASS credential dumping is caught.
+         Include-only and scoped to LSASS, because ProcessAccess is the single
+         noisiest Sysmon event there is. -->
+    <RuleGroup name="process-access" groupRelation="or">
+      <ProcessAccess onmatch="include">
+        <TargetImage condition="image">lsass.exe</TargetImage>
+      </ProcessAccess>
+    </RuleGroup>
+
+    <!-- ID 11: File creation. Dropper artefacts in the usual staging paths. -->
+    <RuleGroup name="file-create" groupRelation="or">
+      <FileCreate onmatch="include">
+        <TargetFilename condition="contains">\Temp\</TargetFilename>
+        <TargetFilename condition="contains">\AppData\Roaming\</TargetFilename>
+        <TargetFilename condition="contains">\Users\Public\</TargetFilename>
+        <TargetFilename condition="contains">\Startup\</TargetFilename>
+        <TargetFilename condition="end with">.ps1</TargetFilename>
+        <TargetFilename condition="end with">.bat</TargetFilename>
+        <TargetFilename condition="end with">.hta</TargetFilename>
+        <TargetFilename condition="end with">.lnk</TargetFilename>
+        <TargetFilename condition="end with">.dmp</TargetFilename>
+      </FileCreate>
+    </RuleGroup>
+
+    <!-- ID 12/13/14: Registry. Run-key and service persistence. -->
+    <RuleGroup name="registry" groupRelation="or">
+      <RegistryEvent onmatch="include">
+        <TargetObject condition="contains">\CurrentVersion\Run</TargetObject>
+        <TargetObject condition="contains">\CurrentVersion\RunOnce</TargetObject>
+        <TargetObject condition="contains">\Services\</TargetObject>
+        <TargetObject condition="contains">\Winlogon\Shell</TargetObject>
+        <TargetObject condition="contains">\Winlogon\Userinit</TargetObject>
+        <TargetObject condition="contains">\Image File Execution Options\</TargetObject>
+        <TargetObject condition="contains">\Windows Defender\</TargetObject>
+        <TargetObject condition="contains">\Policies\System\EnableLUA</TargetObject>
+      </RegistryEvent>
+    </RuleGroup>
+
+    <!-- ID 15: Alternate data streams / mark-of-the-web. -->
+    <RuleGroup name="file-stream" groupRelation="or">
+      <FileCreateStreamHash onmatch="include">
+        <TargetFilename condition="contains">Downloads</TargetFilename>
+        <TargetFilename condition="contains">\Temp\</TargetFilename>
+      </FileCreateStreamHash>
+    </RuleGroup>
+
+    <!-- ID 17/18: Named pipes. Cobalt Strike and PsExec artefacts. -->
+    <RuleGroup name="pipe" groupRelation="or">
+      <PipeEvent onmatch="include">
+        <PipeName condition="contains">psexec</PipeName>
+        <PipeName condition="contains">paexec</PipeName>
+        <PipeName condition="contains">remcom</PipeName>
+        <PipeName condition="contains">atsvc</PipeName>
+      </PipeEvent>
+    </RuleGroup>
+
+    <!-- ID 22: DNS queries. DNS-based C2 and exfiltration. -->
+    <RuleGroup name="dns" groupRelation="or">
+      <DnsQuery onmatch="exclude">
+        <QueryName condition="end with">.nexus.lab</QueryName>
+        <QueryName condition="end with">.msftncsi.com</QueryName>
+        <QueryName condition="end with">.windowsupdate.com</QueryName>
+        <QueryName condition="end with">.microsoft.com</QueryName>
+        <QueryName condition="end with">in-addr.arpa</QueryName>
+      </DnsQuery>
+    </RuleGroup>
+
+    <!-- ID 23/26: File delete. Anti-forensics / defence evasion. -->
+    <RuleGroup name="file-delete" groupRelation="or">
+      <FileDeleteDetected onmatch="include">
+        <TargetFilename condition="end with">.ps1</TargetFilename>
+        <TargetFilename condition="end with">.exe</TargetFilename>
+        <TargetFilename condition="contains">\Temp\</TargetFilename>
+      </FileDeleteDetected>
+    </RuleGroup>
+
+    <!-- ID 25: Process tampering (hollowing / herpaderping). -->
+    <RuleGroup name="process-tampering" groupRelation="or">
+      <ProcessTampering onmatch="exclude" />
+    </RuleGroup>
+
+  </EventFiltering>
+</Sysmon>
