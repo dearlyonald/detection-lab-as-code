@@ -145,9 +145,17 @@ for svc in wazuh-indexer wazuh-manager wazuh-dashboard filebeat; do
 done
 
 # The indexer answering on 9200 is the real health signal.
-if curl -sk https://127.0.0.1:9200/_cluster/health >/dev/null 2>&1 \
-   || curl -sk https://127.0.0.1:9200 >/dev/null 2>&1; then
-  ok "indexer responding on 9200"
+# Check HTTPS reachability without hardcoded credentials.
+# HTTP 401 confirms that the endpoint is reachable, not cluster health.
+INDEXER_STATUS="$(curl -sk -o /dev/null -w '%{http_code}' \
+  --connect-timeout 5 --max-time 10 \
+  https://127.0.0.1:9200/ || true)"
+
+if [[ "$INDEXER_STATUS" == "200" || "$INDEXER_STATUS" == "401" ]]; then
+  ok "indexer HTTPS endpoint responding (HTTP ${INDEXER_STATUS})"
+else
+  warn "indexer HTTPS endpoint not responding as expected (HTTP ${INDEXER_STATUS})"
+  ALL_OK=0
 fi
 
 echo
